@@ -5,16 +5,12 @@
 
 # author: C. Bürger
 
-# Function always called when the script terminates:
-my_exit(){
-	rm script.scm
-	exit 0
-}
-trap 'my_exit' 1 2 3 9 15
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-echo "#!r6rs" > script.scm
-echo "(import (questionnaires language))" >> script.scm
-echo "(load-questionnaire)" >> script.scm
-
-racket -S ../../racr/racket-bin -S racket-bin script.scm #plt-r6rs ++path ../../racr/racket-bin ++path racket-bin script.scm
-my_exit
+######################################################################################################### Execute questionnaires:
+if [ $# -ge 1 ]
+then
+	echo " !!! ERROR: Unknown [$*] command line arguments !!!" >&2
+	exit 2
+fi
+"$script_dir/../../run-program.bash" -s racket -e "$script_dir/run.scm"

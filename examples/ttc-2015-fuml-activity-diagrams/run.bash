@@ -5,87 +5,104 @@
 
 # author: C. Bürger
 
+set -e
+set -o pipefail
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 ################################################################################################################ Parse arguments:
-while getopts s:d:i:m: opt
+if [ $# -eq 0 ]
+then
+	"$script_dir/run.bash" -h
+	exit $?
+fi
+while getopts xs:d:i:m:h opt
 do
 	case $opt in
-		s)	system="$OPTARG";;
-		d)	diagram="$OPTARG";;
-		i)	input="$OPTARG";;
-		m)	mode="$OPTARG";;
-		?)
-			echo "Usage: -s Scheme system (racket, guile, larceny, petite))"
-			echo "       -d Activity diagram"
-			echo "       -i Activity diagram input"
-			echo "       -m Mode (1=parsing, 2=AD-well-formedness, 3=PN-generation, 4=PN-well-formedness"
-			echo "                5=PN-execution (no enabled passes), 6=PN-execution (use enabled passes))"
+		x)
+			print_trace=":false:";;
+		s)
+			selected_system=`echo $selected_system -s "$OPTARG"`;;
+		d)
+			if [ -z ${diagram+x} ]
+			then
+				diagram="$OPTARG"
+			else
+				echo " !!! ERROR: Several activity diagrams for execution selected via -d flag !!!" >&2
+				exit 2
+			fi;;
+		i)
+			if [ -z ${input+x} ]
+			then
+				input="$OPTARG"
+			else
+				echo " !!! ERROR: Several diagram inputs for execution selected via -i flag !!!" >&2
+				exit 2
+			fi;;
+		m)
+			if [ -z ${mode+x} ]
+			then
+				mode="$OPTARG"
+			else
+				echo " !!! ERROR: Several modes for diagram execution selected via -m flag !!!" >&2
+				exit 2
+			fi;;
+		h|?)
+			echo "Usage: -s Scheme system (optional parameter). Permitted values:" >&2
+			echo "`"$script_dir/../../list-scheme-systems.bash" -i | sed 's/^/             /'`" >&2
+			echo "          By default, Larceny is used." >&2
+			echo "       -d Activity diagram (mandatory parameter)." >&2
+			echo "       -i Activity diagram input (optional parameter)." >&2
+			echo "       -m Execution mode (optional parameter). Permitted values:" >&2
+			echo "             1=parsing" >&2
+			echo "             2=AD-well-formedness" >&2
+			echo "             3=PN-generation" >&2
+			echo "             4=PN-well-formedness" >&2
+			echo "             5=PN-enabled" >&2
+			echo "             6=PN-execution (no enabled passes)" >&2
+			echo "             7=PN-execution (use enabled passes)" >&2
+			echo "          The default is 6: Petri net execution, one transition each step." >&2
+			echo "       -x Deactivate printing the execution trace on stdout (optional multi-parameter)." >&2
+			echo "          By default, the execution trace is printed." >&2
 			exit 2
 	esac
 done
 shift $(( OPTIND - 1 ))
 
-if [ -z "$system" ]
+if [ $# -ge 1 ]
 then
-	system="larceny"
-fi
-if [ -z "$diagram" ]
-then
-	echo " !!! ERROR: No activity diagram to interpret given !!!" >&2
+	echo " !!! ERROR: Unknown [$*] command line arguments !!!" >&2
 	exit 2
 fi
-if [ -z "$input" ]
+
+if [ -z ${print_trace+x} ]
+then
+	print_trace=":true:"
+fi
+
+if [ -z ${selected_system+x} ]
+then
+	selected_system=`echo -s "larceny"`
+fi
+
+if [ -z ${diagram+x} ]
+then
+	echo " !!! ERROR: No activity diagram to execute given via -d flag !!!" >&2
+	exit 2
+fi
+
+if [ -z ${input+x} ]
 then
 	input=":false:"
 fi
-if [ -z "$mode" ]
+
+if [ -z ${mode+x} ]
 then
-	mode=5
-else if (( "$mode" < 1 || "$mode" > 6 ))
+	mode=6
+elif (( "$mode" < 1 || "$mode" > 7 ))
 then
-	echo " !!! ERROR: No valid mode selected !!!" >&2
+	echo " !!! ERROR: No valid execution mode selected !!!" >&2
 	exit 2
-fi fi
-
-############################################################################### Configure temporary resources & execution script:
-old_pwd=`pwd`
-
-my_exit(){
-	cd $old_pwd
-	rm script.scm	
-	exit 0
-}
-trap 'my_exit' 1 2 3 9 15
-
-echo "#!r6rs" > script.scm
-echo "(import (rnrs) (ttc-2015-fuml-activity-diagrams user-interface))" >> script.scm
-echo "(define diagram (cadr (command-line)))" >> script.scm
-echo "(define input (caddr (command-line)))" >> script.scm
-echo "(define mode (cadddr (command-line)))" >> script.scm
-echo '(set! input (if (string=? input ":false:") #f input))' >> script.scm
-echo '(set! mode (string->number mode))' >> script.scm
-echo "(run-activity-diagram diagram input mode)" >> script.scm
+fi
 
 ####################################################################################################### Execute activity diagram:
-case "$system" in
-larceny)
-	larceny --r6rs --path "../../racr/larceny-bin:../atomic-petrinets/larceny-bin:larceny-bin" \
-		--program script.scm -- $diagram $input $mode;;
-racket)
-	#plt-r6rs ++path "../../racr/racket-bin" ++path "../atomic-petrinets/racket-bin" ++path "racket-bin" \
-	#	script.scm $diagram $input $mode;;
-	racket --search "../../racr/racket-bin" --search "../atomic-petrinets/racket-bin" --search "racket-bin" \
-		script.scm $diagram $input $mode;;
-guile)
-	guile --no-auto-compile -L "../../racr/guile-bin" -C "../../racr/guile-bin" \
-		-L "../atomic-petrinets/guile-bin" -C "../atomic-petrinets/guile-bin" \
-		-L "guile-bin" -C "guile-bin" \
-		-s script.scm $diagram $input $mode;;
-petite)
-	petite --libdirs "../..:.." \
-		--program script.scm $diagram $input $mode;;
-*)
-	echo " !!! ERROR: Unknown Scheme system [$system] !!!"	
-	my_exit;;
-esac
-
-my_exit
+"$script_dir/../../run-program.bash" $selected_system -e "$script_dir/run.scm" -- "$diagram" "$input" "$mode" "$print_trace"

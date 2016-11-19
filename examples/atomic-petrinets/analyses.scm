@@ -13,7 +13,7 @@
          ->name ->value ->place ->consumers ->* <-
          =places =transitions =in-arcs =out-arcs
          =p-lookup =t-lookup =in-lookup =out-lookup =place =valid? =enabled? =executor)
- (import (rnrs) (racr core))
+ (import (rnrs) (rnrs mutable-pairs) (racr core))
  
  (define pn                   (create-specification))
  
@@ -62,7 +62,7 @@
    (for-each (lambda (n) (hashtable-set! table (->key n) n)) decls)
    table)
  
- (define (specify-analyses)
+ (define (specify-analyses cache-enabled-analysis?)
    (with-specification
     pn
     
@@ -77,90 +77,104 @@
     
     ;;; Query Support:
     
-    (ag-rule places      (AtomicPetrinet (lambda (n) (->* (->Place* n)))))
-    (ag-rule transitions (AtomicPetrinet (lambda (n) (->* (->Transition* n)))))
-    (ag-rule in-arcs     (Transition     (lambda (n) (->* (->In n)))))
-    (ag-rule out-arcs    (Transition     (lambda (n) (->* (->Out n)))))
+    (ag-rule
+     places ; List of places of atomic net.
+     (AtomicPetrinet   (lambda (n) (->* (->Place* n)))))
+    
+    (ag-rule
+     transitions ; List of transitions of atomic net.
+     (AtomicPetrinet   (lambda (n) (->* (->Transition* n)))))
+    
+    (ag-rule
+     in-arcs ; List of ingoing arcs of transition.
+     (Transition       (lambda (n) (->* (->In n)))))
+    
+    (ag-rule
+     out-arcs ; List of outgoing arcs of transition.
+     (Transition       (lambda (n) (->* (->Out n)))))
     
     ;;; Name Analysis:
     
-    (ag-rule place       (Arc            (lambda (n) (=p-lookup n (->place n)))))
-    (ag-rule p-lookup    (AtomicPetrinet (lambda (n) (make-symbol-table (=places n) ->name))))
-    (ag-rule t-lookup    (AtomicPetrinet (lambda (n) (make-symbol-table (=transitions n) ->name))))
-    (ag-rule in-lookup   (Transition     (lambda (n) (make-symbol-table (=in-arcs n) ->place))))
-    (ag-rule out-lookup  (Transition     (lambda (n) (make-symbol-table (=out-arcs n) ->place))))
+    (ag-rule
+     p-lookup ; Hashmap of all places of atomic net (symbolic name -> place).
+     (AtomicPetrinet   (lambda (n) (make-symbol-table (=places n) ->name))))
+    
+    (ag-rule
+     t-lookup ; Hashmap of all transitions of atomic net (symbolic name -> transition).
+     (AtomicPetrinet   (lambda (n) (make-symbol-table (=transitions n) ->name))))
+    
+    (ag-rule
+     in-lookup ; Hashmap of all ingoing arcs of transition (symbolic name -> arc).
+     (Transition       (lambda (n) (make-symbol-table (=in-arcs n) ->place))))
+    
+    (ag-rule
+     out-lookup ; Hashmap of all outgoing arcs of transition (symbolic name -> arc).
+     (Transition       (lambda (n) (make-symbol-table (=out-arcs n) ->place))))
+    
+    (ag-rule
+     place ; Place arc consumes tokens from or produces into (#f if undefined).
+     (Arc              (lambda (n) (=p-lookup n (->place n)))))
     
     ;;; Well-formedness Analysis:
     
     (ag-rule
-     valid?
-     (Place              (lambda (n) (eq? (=p-lookup n (->name n)) n)))
-     (Transition         (lambda (n) (and (eq? (=t-lookup n (->name n)) n)
-                                          (for-all =valid? (=in-arcs n))
-                                          (for-all =valid? (=out-arcs n)))))
-     ((Transition In)    (lambda (n) (and (=place n) (eq? (=in-lookup n (->place n)) n))))
-     ((Transition Out)   (lambda (n) (and (=place n) (eq? (=out-lookup n (->place n)) n))))
-     (AtomicPetrinet     (lambda (n) (and (for-all =valid? (=places n))
-                                          (for-all =valid? (=transitions n))))))
+     valid? ; Are a Petri net component and its parts well-formed?
+     (Place            (lambda (n) (eq? (=p-lookup n (->name n)) n)))
+     (Transition       (lambda (n) (and (eq? (=t-lookup n (->name n)) n)
+                                        (for-all =valid? (=in-arcs n))
+                                        (for-all =valid? (=out-arcs n)))))
+     ((Transition In)  (lambda (n) (and (=place n)
+                                        (eq? (=in-lookup n (->place n)) n))))
+     ((Transition Out) (lambda (n) (and (=place n)
+                                        (eq? (=out-lookup n (->place n)) n))))
+     (AtomicPetrinet   (lambda (n) (and (for-all =valid? (=places n))
+                                        (for-all =valid? (=transitions n))))))
     
     ;;; Enabled Analysis:
     
     (ag-rule
-     enabled?
+     enabled? ; Is an arc/transition enabled (if so, return list of tokens it consumes)?
      
      (Arc
+      cache-enabled-analysis?
       (lambda (n)
-        (define consumed (list))
-        (define (find-consumable f)
-          (ast-find-child
-           (lambda (i n)
-             (let ((enabled? (and (not (memq n consumed)) (f (->value n)) n)))
-               (when enabled? (set! consumed (cons n consumed)))
-               enabled?))
-           (->Token* (=place n))))
+        (define consumers (map (lambda (f) (cons #t f)) (->consumers n)))
+        (ast-find-child*
+         (lambda (i n)
+           (define consumer?
+             (find (lambda (c) (and (car c) ((cdr c) (->value n)))) consumers))
+           (when consumer?
+             (set-car! consumer? #f)
+             (set-cdr! consumer? n))
+           (and (not (find car consumers)) (map cdr consumers)))
+         (->Token* (=place n)))))
+     
+     (Transition
+      cache-enabled-analysis?
+      (lambda (n)
         (call/cc
          (lambda (abort)
            (fold-left
-            (lambda (result f)
-              (define consumed? (find-consumable f))
-              (if consumed? (cons consumed? result) (abort #f)))
+            (lambda (result n)
+              (define enabled? (=enabled? n))
+              (if enabled? (append result enabled?) (abort #f)))
             (list)
-            (->consumers n))))))
-     ;(set!
-     ; consumed
-     ; (map find-consumable (->consumers n)))
-     ;(and (for-all (lambda (x) x) consumed) consumed)))
-     
-     (Transition
-      (lambda (n)
-        ;(define result (list))
-        ;(and
-        ; (not
-        ;  (ast-find-child
-        ;   (lambda (i n)
-        ;     (let ((enabled? (=enabled? n)))
-        ;       (and enabled? (begin (set! result (append result enabled?)) #f))))
-        ;   (->In n)))
-        ; result)
-        (and
-         (not (ast-find-child (lambda (i n) (not (=enabled? n))) (->In n)))
-         (fold-left
-          (lambda (result n)
-            (append result (=enabled? n)))
-          (list)
-          (=in-arcs n))))))
+            (=in-arcs n)))))))
     
     (ag-rule
-     executor
+     executor ; Function, firing transition if enabled; returns if transition was fired.
      (Transition
       (lambda (n)
-        (define producers (map ->consumers (=out-arcs n)))
-        (define destinations (map ->Token* (map =place (=out-arcs n))))
-        (lambda (consumed-tokens)
+        (define (fire! tokens-consumed)
+          (define token-values (map ->value tokens-consumed))
+          (for-each rewrite-delete tokens-consumed)
           (for-each
            (lambda (producer destination)
              (for-each
               (lambda (value) (rewrite-add destination (:Token value)))
-              (apply producer consumed-tokens)))
-           producers
-           destinations))))))))
+              (apply producer token-values)))
+           (map ->consumers (=out-arcs n))
+           (map ->Token* (map =place (=out-arcs n)))))
+        (lambda ()
+          (define enabled? (=enabled? n))
+          (and enabled? (begin (fire! enabled?) #t)))))))))

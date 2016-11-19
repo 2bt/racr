@@ -5,218 +5,117 @@
 
 # author: C. Bürger
 
+set -e
+set -o pipefail
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 ################################################################################################################ Parse arguments:
-supported_systems=( racket guile larceny petite )
-selected_systems=()
-while getopts s: opt
+while getopts s:h opt
 do
 	case $opt in
 		s)
-			if [[ " ${supported_systems[@]} " =~ " ${OPTARG} " ]]
-			then
-				if which "${OPTARG}" > /dev/null
-				then
-					selected_systems+=( "$OPTARG" )
-				else
-					echo " !!! ERROR: [$OPTARG] not installed !!!" >&2
-					exit 2
-				fi
-			else
-				echo " !!! ERROR: Unknown [$OPTARG] Scheme system !!!" >&2
-				exit 2
-			fi;;
-		?)
-			echo "Usage: -s Scheme system (${supported_systems[@]})"
-			exit 2
+			"$script_dir/list-scheme-systems.bash" -s "$OPTARG"
+			selected_systems+=( "$OPTARG" );;
+		h|?)
+			echo "Usage: -s Scheme system (optional multi-parameter). Permitted values:" >&2
+			echo "`"$script_dir/list-scheme-systems.bash" -i | sed 's/^/             /'`" >&2
+			echo "          If no system is selected, all installed and officially supported systems are tested." >&2
+			exit 2;;
 	esac
 done
 shift $(( OPTIND - 1 ))
 
-if [ -z "$selected_systems" ]
+if [ ! $# -eq 0 ]
 then
-	for s in ${supported_systems[@]}
-	do
-		if which "$s" > /dev/null
-		then
-			selected_systems+=( "$s" )
-		fi
-	done
-	if [ -z "$selected_systems" ]
-	then
-		echo " !!! ERROR: No Scheme system found !!!" >&2
-		exit 2
-	fi
+	echo " !!! ERROR: Unknown [$@] command line arguments !!!" >&2
+	exit 2
 fi
 
-old_pwd=`pwd`
+if [ -z ${selected_systems+x} ]
+then
+	selected_systems=`"$script_dir/list-scheme-systems.bash" -i`
+fi
 
-##################################################################################################### Define execution functions:
-begin_run(){
-	echo `pwd`/$1
-}
-
-racket_run(){
-	if [[ " ${selected_systems[@]} " =~ "racket" ]]
+###################################################################################################### Define execution function:
+run(){
+	program="$1"
+	library="$2"
+	shift
+	shift
+	if [ -z "$library" ]
 	then
-		printf " Racket"
-		if [ "$1" == "" ]
-		then
-			libs="++path $old_pwd/racr/racket-bin"
-		else
-			libs="++path $old_pwd/racr/racket-bin ++path $1"
-		fi
-		plt-r6rs $libs $2
+		args=`echo -- "$@"`
+	else
+		args=`echo -l "$library" -- "$@"`
 	fi
-}
-
-guile_run(){
-	if [[ " ${selected_systems[@]} " =~ "guile" ]]
-	then
-		printf " Guile"
-		if [ "$1" == "" ]
+	echo "$program" "$@"
+	for s in ${selected_systems[@]}
+	do
+		set +e
+		set +o pipefail
+		error_message=`"$script_dir/run-program.bash" -s "$s" -e "$program" $args 2>&1 1>/dev/null`
+		error_status=$?
+		set -e
+		set -o pipefail
+		if [ $error_status -eq 0 -a ! -z "$error_message" ]
 		then
-			llibs="-L $old_pwd/racr/guile-bin"
-			clibs="-C $old_pwd/racr/guile-bin"
-		else
-			llibs="-L $old_pwd/racr/guile-bin -L $1"
-			clibs="-C $old_pwd/racr/guile-bin -C $1"
+			error_status=1
 		fi
-		guile --no-auto-compile $llibs $clibs -s $2
-	fi
-}
-
-larceny_run(){
-	if [[ " ${selected_systems[@]} " =~ "larceny" ]]
-	then
-		printf " Larceny"
-		if [ "$1" == "" ]
-		then
-			libs="--path $old_pwd/racr/larceny-bin"
-		else
-			libs="--path $old_pwd/racr/larceny-bin:$1"
-		fi
-		larceny --r6rs $libs --program $2
-	fi
-}
-
-petite_run(){
-	if [[ " ${selected_systems[@]} " =~ "petite" ]]
-	then
-		printf " Petite"
-		if [ "$1" == "" ]
-		then
-			libs="--libdirs $old_pwd"
-		else
-			libs="--libdirs $old_pwd:$1"
-		fi
-		petite $libs --program $2
-	fi
-}
-
-end_run(){
+		case $error_status in
+			0) printf " $s";;	# all correct
+			2) printf " -$s-";;	# configuration error for Scheme system => test skipped
+			*)
+				echo " !$s!"	# test failed (execution error) => print error and abort testing
+				echo "$error_message"
+				exit $error_status;;
+		esac
+	done
 	echo ""
 }
 
 ################################################################################################################## Execute tests:
-echo "=========================================>>> Run Tests:"
 
 # Test basic API:
-cd $old_pwd/tests
-for f in *.scm
+for f in "$script_dir"/tests/*.scm
 do
-	begin_run $f
-	racket_run "" $f
-	guile_run "" $f
-	larceny_run "" $f
-	petite_run "" $f
-	end_run
+	run "$f" ""
 done
 
 # Test binary numbers example:
-cd $old_pwd/examples/binary-numbers
-begin_run binary-numbers.scm
-racket_run "" binary-numbers.scm
-guile_run "" binary-numbers.scm
-larceny_run "" binary-numbers.scm
-petite_run "" binary-numbers.scm
-end_run
+run "$script_dir/examples/binary-numbers/binary-numbers.scm" ""
 
 # Test state machines example:
-cd $old_pwd/examples/state-machines
-begin_run state-machines.scm
-racket_run "" state-machines.scm
-guile_run "" state-machines.scm
-larceny_run "" state-machines.scm
-petite_run "" state-machines.scm
-end_run
+run "$script_dir/examples/state-machines/state-machines.scm" ""
 
 # Test atomic Petri nets example:
-cd $old_pwd/examples/atomic-petrinets/examples
-for f in *.scm
+for f in "$script_dir"/examples/atomic-petrinets/examples/*.scm
 do
-	begin_run $f
-	racket_run "./../racket-bin" $f
-	guile_run "./../guile-bin" $f
-	larceny_run "./../larceny-bin" $f
-	petite_run "./../.." $f
-	end_run
+	run "$f" "$script_dir/examples/atomic-petrinets"
 done
 
-# Test Petri nets example:
-cd $old_pwd/examples/petrinets/examples
-for f in *.scm
+# Test composed Petri nets example (Guile is excluded because of issue #37):
+for f in "$script_dir"/examples/composed-petrinets/examples/*.scm
 do
-	begin_run $f
-	racket_run "./../racket-bin" $f
-	#guile_run "./../guile-bin" $f # Disabled because of issue 37.
-	larceny_run "./../larceny-bin" $f
-	petite_run "./../.." $f
-	end_run
+	run "$f" "$script_dir/examples/composed-petrinets"
+done
+
+# Test fUML Activity Diagrams example:
+for f in "$script_dir"/examples/ttc-2015-fuml-activity-diagrams/examples/contest-tests/*.ad
+do
+	input=${f%.ad}.adinput
+	if [ ! -f "$input" ]
+	then
+		input=":false:"
+	fi
+	run "$script_dir/examples/ttc-2015-fuml-activity-diagrams/run.scm" "" "$f" "$input" 6 ":false:"
 done
 
 # Test SiPLE example:
-cd $old_pwd/examples/siple/examples/correct
-for f in *.siple
+for f in "$script_dir"/examples/siple/examples/correct/*.siple
 do
-	begin_run $f
-	racket_run "./../../racket-bin" "./../run-correct.scm $f"
-	guile_run "./../../guile-bin" "./../run-correct.scm $f"
-	larceny_run "./../../larceny-bin" "./../run-correct.scm -- $f"
-	petite_run "./../../.." "./../run-correct.scm $f"
-	end_run
+	run "$script_dir/examples/siple/run.scm" "" "$f" ":false:"
 done
-cd $old_pwd/examples/siple/examples/incorrect
-for f in *.siple
+for f in "$script_dir"/examples/siple/examples/incorrect/*.siple
 do
-	begin_run $f
-	racket_run "./../../racket-bin" "./../run-incorrect.scm $f"
-	guile_run "./../../guile-bin" "./../run-incorrect.scm $f"
-	larceny_run "./../../larceny-bin" "./../run-incorrect.scm -- $f"
-	petite_run "./../../.." "./../run-incorrect.scm $f"
-	end_run
+	run "$script_dir/examples/siple/run.scm" "" "$f" ":true:"
 done
-
-# Test Tiny C++ example:
-cd $old_pwd/profiling/tinycpp/examples
-if [[ " ${selected_systems[@]} " =~ "racket" ]]
-then
-	echo "Tiny C++ Racket:"
-	./run-examples.bash Racket
-fi
-if [[ " ${selected_systems[@]} " =~ "guile" ]]
-then
-	echo "Tiny C++ Guile:"
-	./run-examples.bash Guile
-fi
-if [[ " ${selected_systems[@]} " =~ "larceny" ]]
-then
-	echo "Tiny C++ Larceny:"
-	./run-examples.bash Larceny
-fi
-if [[ " ${selected_systems[@]} " =~ "petite" ]]
-then
-	echo "Tiny C++ Petite Chez Scheme:"
-	./run-examples.bash Petite
-fi
-
-cd $old_pwd

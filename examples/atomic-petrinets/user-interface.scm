@@ -60,21 +60,15 @@
  
  ;;; Execution:
  
- (define (run-petrinet! petrinet)
-   (unless (=valid? petrinet)
+ (define (run-petrinet! net)
+   (unless (=valid? net)
      (exception: "Cannot run Petri Net; The given net is not well-formed."))
-   (let ((enabled? (find =enabled? (=transitions petrinet))))
-     (when enabled?
-       (fire-transition! enabled?)
-       (run-petrinet! petrinet))))
+   (when (find (lambda (t) ((=executor t))) (=transitions net))
+     (run-petrinet! net)))
  
  (define (fire-transition! transition)
-   (define enabled? (=enabled? transition))
-   (unless enabled?
-     (exception: "Cannot fire transition; The transition is not enabled."))
-   (let ((consumed-tokens (map ->value enabled?)))
-     (for-each rewrite-delete enabled?)
-     ((=executor transition) consumed-tokens)))
+   (unless ((=executor transition))
+     (exception: "Cannot fire transition; The transition is not enabled.")))
  
  ;;; REPL Interpreter:
  
@@ -127,12 +121,11 @@
    (define t-enabled (map (lambda (t) (=t-lookup net t)) enabled))
    (define t-!enabled (filter (lambda (t) (not (memq t t-enabled))) (=transitions net)))
    (assert (for-all =enabled? t-enabled))
-   (assert (for-all (lambda (t) (not (=enabled? t))) t-!enabled))
-   (assert-exception petrinets-exception? (for-all fire-transition! t-!enabled)))
+   (assert (for-all (lambda (t) (not (=enabled? t))) t-!enabled)))
  
  ;;; Initialisation:
  
- (define (initialise-petrinet-language)
+ (define (initialise-petrinet-language cache-enabled-analysis?)
    (when (= (specification->phase pn) 1)
-     (specify-analyses)
+     (specify-analyses cache-enabled-analysis?)
      (compile-ag-specifications pn))))

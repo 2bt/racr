@@ -9,13 +9,14 @@
  (ttc-2015-fuml-activity-diagrams user-interface)
  (export run-activity-diagram)
  (import (rnrs) (racr core) (racr testing)
-         (ttc-2015-fuml-activity-diagrams language)
-         (ttc-2015-fuml-activity-diagrams parser)
          (prefix (atomic-petrinets analyses) pn:)
-         (prefix (atomic-petrinets user-interface) pn:))
+         (prefix (atomic-petrinets user-interface) pn:)
+         (ttc-2015-fuml-activity-diagrams language)
+         (ttc-2015-fuml-activity-diagrams parser))
  
- (define (run-activity-diagram diagram-file input-file mode) ; Execute diagram & print trace.
+ (define (run-activity-diagram diagram-file input-file mode print-trace?) ; Execute diagram.
    (define activity (parse-diagram diagram-file))
+   (if print-trace? (activate-tracing) (deactivate-tracing))
    (when input-file
      (for-each
       (lambda (n)
@@ -33,15 +34,17 @@
          (when (> mode 3)
            (unless (pn:=valid? net) (exception: "Invalid Diagram"))
            (when (> mode 4)
-             (trace (->name (=initial activity)))
-             (if (= mode 5)
-                 (pn:run-petrinet! net)
-                 (do ((enabled (filter pn:=enabled? (pn:=transitions net))
-                               (filter pn:=enabled? (pn:=transitions net))))
-                   ((null? enabled))
-                   (for-each pn:fire-transition! enabled)))
-             (for-each
-              (lambda (n) (trace (->name n) " = " ((=v-accessor n))))
-              (=variables activity))))))))
+             (for-each pn:=enabled? (pn:=transitions net))
+             (when (> mode 5)
+               (trace (->name (=initial activity)))
+               (if (= mode 6)
+                   (pn:run-petrinet! net)
+                   (do ((enabled (filter pn:=enabled? (pn:=transitions net))
+                                 (filter pn:=enabled? (pn:=transitions net))))
+                     ((null? enabled))
+                     (for-each pn:fire-transition! enabled)))
+               (for-each
+                (lambda (n) (trace (->name n) " = " ((=v-accessor n))))
+                (=variables activity)))))))))
  
- (pn:initialise-petrinet-language))
+ (pn:initialise-petrinet-language #t))

@@ -1,0 +1,31 @@
+_[>> Title <<](title.md) [>> Preface <<](synopsis.md) [>> Contents <<](contents.md) [>> Bibliography <<](bibliography.md)_
+___
+
+# _RACR-NET_ Entwicklerhandbuch Inhaltsverzeichnis
+
+  * [Einleitung](introduction.md)
+    * [Aufgabenstellung](introduction.md#aufgabenstellung)
+    * [Struktur der Arbeit](introduction.md#struktur-der-arbeit)
+  * [Konzeptionelle und technische Voraussetzungen](prerequisites.md)
+    * [Überblick der RAG-gesteuerten Graphersetzung](prerequisites.md#überblick-der-rag-gesteuerten-graphersetzung)
+    * [Scheme](prerequisites.md#scheme)
+    * [Die RACR Scheme-Bibliothek](prerequisites.md#die-racr-scheme-bibliothek)
+    * [Das .NET-Framework und die Common Language Infrastructure](prerequisites.md#das-net-framework-und-die-common-language-infrastructure)
+    * [IronScheme](prerequisites.md#ironscheme)
+  * [RACR-NET Implementierung: Prozedurale Schnittstelle](procedural-api.md)
+    * [Scheme in C#](procedural-api.md#scheme-in-c)
+    * [RACR in C#](procedural-api.md#racr-in-c)
+    * [Anforderungsanalyse](procedural-api.md#anforderungsanalyse)
+    * [Implementierung der prozeduralen Schnittstelle](procedural-api.md#implementierung-der-prozeduralen-schnittstelle)
+  * [RACR-NET Implementierung: Objektorientierte Schnittstelle](object-oriented-api.md)
+    * [Überblick über die objektorientierte Schnittstelle](object-oriented-api.md#überblick-über-die-objektorientierte-Schnittstelle)
+    * [Anwendungsbeispiel](object-oriented-api.md#anwendungsbeispiel)
+    * [Herausforderungen bei der Implementierung](object-oriented-api.md#herausforderungen-bei-der-implementierung)
+    * [Implementierung](object-oriented-api.md#implementierung)
+  * [Evaluation](evaluation.md)
+    * [Testen der Schnittstelle](evaluation.md#testen-der-schnittstelle)
+    * [Performance-Messungen und -Vergleiche](evaluation.md#performance-messungen-und--vergleiche)
+  * [Zusammenfassung und Ausblick](conclusion.md)
+    * [Eine objektorientierte Bibliothek für RAG-gesteuerte Graphersetzung](conclusion.md#eine-objektorientierte-bibliothek-für-rag-gesteuerteßgraphersetzung)
+    * [Zukünftige Arbeiten](conclusion.md#zukünftige-arbeiten)
+  * [Literaturverzeichnis](bibliography.md)

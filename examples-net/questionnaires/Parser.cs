@@ -9,26 +9,17 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 
+using Ast = Racr.AstNode;
+using Types = QuestionnairesLanguage.Types;
+
 public class Lexer {
-
-	static public string EscapeString(string s) {
-		string o = "\"";
-		foreach (var c in s) {
-			if (c == '\\' || c == '"') o += '\\' + c;
-			else if (c == '\n') o += '\n';
-			else o += c;
-		}
-		o += "\"";
-		return o;
-	}
-
-	public static string EscapeValue(object v) {
-		if (v == null) return "";
-		if (v is string) return EscapeString((string) v);
-		if (v is bool) return (bool) v ? "#t" : "#f";
-		return Convert.ToString(v);
-	}
-
+	private Lexemes lexeme;
+	public Lexemes Lexeme { get { return lexeme; } }
+	private string token;
+	public string Token { get { return token; } }
+	private char character;
+	private string source;
+	private int position;
 
 	public enum Lexemes {
 		EOF,
@@ -46,6 +37,24 @@ public class Lexer {
 		position = 0;
 		NextChar();
 		NextLexeme();
+	}
+
+	static public string EscapeString(string s) {
+		string o = "\"";
+		foreach (var c in s) {
+			if (c == '\\' || c == '"') o += '\\' + c;
+			else if (c == '\n') o += '\n';
+			else o += c;
+		}
+		o += "\"";
+		return o;
+	}
+
+	public static string EscapeValue(object v) {
+		if (v == null) return "";
+		if (v is bool) return (bool) v ? "#t" : "#f";
+		if (v is string) return EscapeString((string) v);
+		return Convert.ToString(v);
 	}
 
 	public Lexemes NextLexeme() {
@@ -78,28 +87,34 @@ public class Lexer {
 		token = "";
 
 		switch (character) {
-			case '(': NextChar(); return Lexemes.LeftParenthesis;
-			case ')': NextChar(); return Lexemes.RightParenthesis;
-			case '\0': return Lexemes.EOF;
-			case '\'':
+		case '(':
+			NextChar();
+			return Lexemes.LeftParenthesis;
+		case ')':
+			NextChar();
+			return Lexemes.RightParenthesis;
+		case '\0':
+			return Lexemes.EOF;
+		case '\'':
 			NextChar();
 			while (Char.IsLetterOrDigit(character)) token += NextChar();
 			return Lexemes.Symbol;
-			case '"':
+		case '"':
 			NextChar();
 			while (character != '"') {
-				if (character == '\0') return Lexemes.Error;
-				else if (character == '\\') {
+				if (character == '\0') {
+					return Lexemes.Error;
+				} else if (character == '\\') {
 					NextChar();
 					if (character == '\\' || character == '"') token += character;
 					else if (character == 'n') token += '\n';
 					else return Lexemes.Error;
-				}
-				else token += NextChar();
+				} else token += NextChar();
 			}
 			NextChar();
 			return Lexemes.String;
-			default: break;
+		default:
+			break;
 		}
 
 		if (Char.IsDigit(character)) {
@@ -118,18 +133,7 @@ public class Lexer {
 
 		return Lexemes.Error;
 	}
-
-	public Lexemes Lexeme { get { return lexeme; } }
-	public string Token { get { return token; } }
-
-	private char character;
-	private Lexemes lexeme;
-	private string token;
-
-	private string source;
-	private int position;
 }
-
 
 public class Parser : Lexer {
 	private Racr.Specification spec;
@@ -142,86 +146,94 @@ public class Parser : Lexer {
 		if (Lexeme != lexeme) throw new Exception("Parse Exception");
 		NextLexeme();
 	}
+
 	private string ParseIdentifier() {
 		var t = Token;
 		Consume(Lexemes.Identifier);
 		return t;
 	}
+
 	private string ParseString() {
 		var t = Token;
 		Consume(Lexemes.String);
 		return t;
 	}
+
 	private string ParseSymbol() {
 		var t = Token;
 		Consume(Lexemes.Symbol);
 		return t;
 	}
+
 	private object ParseValue() {
 		var t = Token;
 		switch (NextLexeme()) {
-			case Lexemes.Identifier:
+		case Lexemes.Identifier:
 			if (t == "#t") return true;
 			if (t == "#f") return false;
 			throw new Exception("Parse Error");
-			case Lexemes.Number: return Convert.ToDouble(t);
-			case Lexemes.String: return t;
-			default: throw new Exception("Parse Error");
+		case Lexemes.Number:
+			return Convert.ToDouble(t);
+		case Lexemes.String:
+			return t;
+		default:
+			throw new Exception("Parse Error");
 		}
 	}
 
-	private Racr.AstNode ParseExpression() {
-		Racr.AstNode c;
-		List<Racr.AstNode> e, a;
+	private Ast ParseExpression() {
+		Ast c;
+		List<Ast> e, a;
 		string n, l, o;
-		ValueTypes t;
+		Types t;
 		object v;
 
 		Consume(Lexemes.LeftParenthesis);
 		switch (ParseIdentifier()) {
-			case "Form":
-			e = new List<Racr.AstNode>();
+		case "Form":
+			e = new List<Ast>();
 			e.Add(spec.CreateAst("ComputedQuestion", "ErrorType", "", spec.CreateAst("Constant", false)));
 			while (Lexeme == Lexemes.LeftParenthesis) e.Add(ParseExpression());
 			Consume(Lexemes.RightParenthesis);
 			return spec.CreateAst("Form", spec.CreateAstList(e.ToArray()));
-			case "If":
+		case "If":
 			c = ParseExpression();
-			e = new List<Racr.AstNode>();
+			e = new List<Ast>();
 			while (Lexeme == Lexemes.LeftParenthesis) e.Add(ParseExpression());
 			Consume(Lexemes.RightParenthesis);
 			return spec.CreateAst("Group", c, spec.CreateAstList(e.ToArray()));
-			case "??":
+		case "??":
 			n = ParseSymbol();
 			l = ParseString();
-			t = (ValueTypes) Enum.Parse(typeof(ValueTypes), ParseIdentifier());
-			if (Lexeme == Lexemes.RightParenthesis) v = null;
+			t = (Types) Enum.Parse(typeof(Types), ParseIdentifier());
+			if (Lexeme == Lexemes.RightParenthesis) v = QuestionnairesLanguage.ErrorValue;
 			else v = ParseValue();
 			Consume(Lexemes.RightParenthesis);
 			return spec.CreateAst("OrdinaryQuestion", n, l, t, v);
-			case "~?":
+		case "~?":
 			c = spec.CreateAst("ComputedQuestion", ParseSymbol(), ParseString(), ParseExpression());
 			Consume(Lexemes.RightParenthesis);
 			return c;
-			case "~>":
+		case "~>":
 			n = ParseSymbol();
 			Consume(Lexemes.RightParenthesis);
 			return spec.CreateAst("Use", n);
-			case "~!":
+		case "~!":
 			v = ParseValue();
 			Consume(Lexemes.RightParenthesis);
 			return spec.CreateAst("Constant", v);
-			case "~~":
+		case "~~":
 			o = ParseIdentifier();
-			a = new List<Racr.AstNode>();
+			a = new List<Ast>();
 			while (Lexeme == Lexemes.LeftParenthesis) a.Add(ParseExpression());
 			Consume(Lexemes.RightParenthesis);
 			return spec.CreateAst("Computation", o, spec.CreateAstList(a.ToArray()));
-			default: throw new Exception("Parse Exception");
+		default:
+			throw new Exception("Parse Exception");
 		}
 	}
 
-	public Racr.AstNode ParseAst() {
+	public Ast ParseAst() {
 		var ast = ParseExpression();
 		Consume(Lexemes.EOF);
 		return ast;
